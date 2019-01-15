@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>
+        .clickable {
+            cursor: pointer;
+        }
+        .icon {
+            width: 25px;
+            height: 25px;
+            margin-top: 10px;
+        }
+        .item * {
+            display: inline;
+            overflow: hidden;
+        }
+        #items {
+            border: 2px solid darkgray;
+            background: lightblue;
+            height: 100%;
+        }
+    </style>
+    <meta charset="UTF-8">
+    <title>BlUE File Browser</title>
+    <script>
+        HTMLElement.prototype.appendChildren = function() {
+            let documentFragment = document.createDocumentFragment();
+            for ( let i = 0; i < arguments.length; i++ )
+                documentFragment.appendChild(arguments[i]);
+            this.appendChild(documentFragment);
+        };
+        function download(filename, dataurl) {
+            let element = document.createElement('a');
+            element.setAttribute('href', dataurl);
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        const folderIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678072-folder-document-512.png',
+            fileIcon = 'https://cdn4.iconfinder.com/data/icons/small-n-flat/24/text-512.png',
+            upIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678092-sign-add-512.png',
+            homeIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678085-house-512.png';
+            searchIcon = 'https://cdn4.iconfinder.com/data/icons/small-n-flat/24/search-512.png',
+            downIcon= 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678127-cloud-down-512.png',
+            delIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678095-trashcan-512.png',
+            backIcon = 'https://image.flaticon.com/icons/svg/889/889590.svg',
+            settIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678102-cog-512.png',
+            infoIcon = 'https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678110-sign-info-512.png';
+
+        function build(resp){
+            let div = document.getElementById('items'); // Main div which holds the item buttons
+            if (resp == null ) // First time, or revert to base
+                resp = JSON.parse("{{ items }}".replace(/&#39;/g, '"'));
+            if (resp.type){
+                download(resp.name,"data:"+resp.type+";base64,"+resp.content.substring(2, resp.content.length - 1));
+                return;
+            }
+            while (div.firstChild) { // Remove all old buttons before refresh
+                div.removeChild(div.firstChild);
+            }
+            for (let item in resp){ // icon filename
+                let cDiv = document.createElement('div'), // Div which holds file name and respective icons
+                    frag = document.createDocumentFragment(),
+                    icon = document.createElement('img'),
+                    name = document.createElement('p'),
+                    get = document.createElement('img'),
+                    settings = document.createElement('img'),
+                    settdiv = document.createElement('div'),
+                    rename = document.createElement('button'),
+                    del = document.createElement('button'),
+                    move = document.createElement('button'),
+                    info = document.createElement('img');
+                cDiv.classList.add('item');
+                cDiv.id = item;
+                icon.classList.add('icon');
+                icon.title = resp[item].type;
+                icon.style.cssText = "left: 5px; position: relative;";
+                name.innerHTML = item;
+                name.style.cssText = "left: 55px; position: absolute;";
+                get.classList.add('icon', 'clickable');
+                get.id = item;
+                get.dataset.type = 'get';
+                get.addEventListener('click', function(){send(this)});
+                get.style.cssText = "right: 95px; position: absolute;";
+                settings.src = settIcon;
+                settings.classList.add('icon', 'clickable');
+                settings.style.cssText = "right: 55px; position: absolute;";
+                settdiv.appendChildren(settings);
+                info.src = infoIcon;
+                info.title = "Size: " + resp[item]['info'].size + "\n"
+                            +"Path: " + resp[item]['info'].path + "\n"
+                            +"Last modified: " + resp[item]['info'].mod + "\n";
+                info.classList.add('icon', 'tooltip');
+                info.style.cssText = "right: 15px; position: absolute;";
+                if (resp[item].type === 'file') {
+                    icon.src = fileIcon;
+                    get.src = downIcon;
+                    get.classList.add('file');
+                    get.title = 'Download file';
+                    info.title += "File Type: " + resp[item]['info'].filetype;
+                }
+                else if (resp[item].type === 'folder') {
+                    icon.src = folderIcon;
+                    get.src = folderIcon;
+                    get.title = 'Open folder';
+                    get.classList.add('folder');
+                }
+                frag.appendChild(cDiv);
+                cDiv.appendChildren(icon, name, get, settdiv, info);
+                div.appendChild(frag);
+            }
+        }
+
+        function send(button){
+            let path = '';
+            if (button.id === 'backbtn'){ // Try to clean this up a bit
+                path = document.getElementById('path').innerHTML.replace(/\/$/, '');
+                let tmp = path.split('/');
+                tmp.pop();
+                path = tmp.join('/');
+            }
+            else if (button.id === 'homebtn') {
+                path = '';
+            }
+            else
+                path = document.getElementById('path').innerHTML + button.id; // Sets path based on button clicked
+
+            if (!button.classList.contains('file')) { // Update the PATH readout
+                document.getElementById('path').innerHTML = path + '/';
+            }
+
+            else if (button.classList.contains('file') && !confirm('Download file ' + button.id + '?')) {
+                    return;
+            }
+            fetch('files', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({'path': path.substr(1,path.length), 'type': button.dataset.type})
+            })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(respJson) {
+                    build(respJson);
+                });
+        }
+        window.onload = function() {
+            let clickarr = document.getElementsByClassName('clickable');
+            for (let i = 0; i < clickarr.length; i++) {
+                clickarr[i].addEventListener('click', function(){
+                    send(this);
+                });
+            }
+            build();
+        };
+    </script>
+</head>
+<body>
+<h4> PATH: </h4>
+<p id='path'>/</p>
+<div>
+    <img src='https://image.flaticon.com/icons/svg/889/889590.svg'
+         title='Return to parent directory' alt='' id='backbtn' class='icon clickable' data-type='get'>
+    <img src='https://cdn0.iconfinder.com/data/icons/small-n-flat/24/678085-house-512.png'
+        title='Return to home directory' alt='' id='homebtn' class='icon clickable' data-type='get'>
+</div>
+<div id='items'></div>
+</body>
+</html>
